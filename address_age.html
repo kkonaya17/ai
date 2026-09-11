@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>주소·나이 조회</title>
+<title>원주시 주소·나이 조회</title>
 <!--
-  ▶ 도로명주소 + 생년월일 통합 조회
-  - 도로명주소를 검색하면 우편번호·시군구·법정동/행정동이 자동으로 채워집니다. (다음 우편번호 서비스, 무료/키 불필요)
+  ▶ 원주시 도로명주소 + 생년월일 통합 조회
+  - 도로명주소를 검색하면 우편번호·원주시 행정동이 자동으로 채워집니다. (다음 우편번호 서비스, 무료/키 불필요)
+  - 원주시가 아닌 주소를 검색하면 안내 문구를 표시하고 결과에 반영하지 않습니다.
   - 생년월일 6자리(예: 990101)를 넣으면 만 나이가 자동 계산됩니다. (2023년 시행 "만 나이" 기준)
   - 파일 하나로 동작합니다. 서버·로그인 없음. 인터넷 연결은 주소 검색(다음 우편번호 팝업)에만 필요합니다.
 -->
@@ -43,18 +44,19 @@
 </head>
 <body>
 <header>
-  <h1>주소 · 나이 통합 조회</h1>
-  <p>도로명주소로 우편번호·동을 찾고, 생년월일 6자리로 만 나이를 계산합니다.</p>
+  <h1>원주시 주소 · 나이 통합 조회</h1>
+  <p>도로명주소로 원주시 행정동·우편번호를 찾고, 생년월일 6자리로 만 나이를 계산합니다.</p>
 </header>
 <main>
   <div class="card">
-    <h2>① 도로명주소 검색</h2>
+    <h2>① 도로명주소 검색 (원주시 전용)</h2>
     <label>도로명주소</label>
     <input id="roadAddr" readonly placeholder="아래 버튼을 눌러 주소를 검색하세요">
     <div class="bar">
       <button class="primary" id="searchAddr">주소 검색</button>
       <button id="clearAddr">지우기</button>
     </div>
+    <div class="err" id="addrErr"></div>
     <div class="row2" style="margin-top:12px">
       <div><label>우편번호</label><input id="zonecode" readonly></div>
       <div><label>지번주소</label><input id="jibunAddr" readonly></div>
@@ -62,7 +64,7 @@
       <div><label>법정동</label><input id="bname" readonly></div>
       <div><label>행정동</label><input id="hname" readonly></div>
     </div>
-    <p class="hint">'행정동'이 비어 있으면 법정동과 동일하거나, 검색 서비스가 별도 행정동 정보를 제공하지 않는 주소입니다.</p>
+    <p class="hint">이 앱은 강원특별자치도 원주시 주소만 지원합니다. 원주시가 아닌 주소를 선택하면 안내 문구가 표시되고 결과에는 반영되지 않습니다. '행정동'이 비어 있으면 법정동과 동일한 주소입니다.</p>
   </div>
 
   <div class="card">
@@ -107,6 +109,14 @@ $('searchAddr').onclick = () => {
   }
   new daum.Postcode({
     oncomplete(data){
+      const errBox = $('addrErr');
+      if (!/원주시/.test(data.sigungu || '')) {
+        errBox.textContent = `원주시 주소가 아닙니다 (검색된 지역: ${[data.sido, data.sigungu].filter(Boolean).join(' ') || '알 수 없음'}). 원주시 도로명주소로 다시 검색해주세요.`;
+        ['roadAddr','jibunAddr','zonecode','sigungu','bname','hname'].forEach(id => $(id).value = '');
+        updateSummary();
+        return;
+      }
+      errBox.textContent = '';
       $('roadAddr').value = data.roadAddress || data.autoRoadAddress || '';
       $('jibunAddr').value = data.jibunAddress || data.autoJibunAddress || '';
       $('zonecode').value = data.zonecode || '';
@@ -119,6 +129,7 @@ $('searchAddr').onclick = () => {
 };
 $('clearAddr').onclick = () => {
   ['roadAddr','jibunAddr','zonecode','sigungu','bname','hname'].forEach(id => $(id).value = '');
+  $('addrErr').textContent = '';
   updateSummary();
 };
 
@@ -165,9 +176,10 @@ function updateSummary(){
   const hasAddr = !!$('roadAddr').value;
   const parts = [];
   if (hasAddr) {
-    parts.push(`<div><b>주소</b> ${$('roadAddr').value} (${$('zonecode').value})</div>`);
+    parts.push(`<div><b>주소</b> ${$('roadAddr').value}</div>`);
+    parts.push(`<div><b>우편번호</b> ${$('zonecode').value}</div>`);
     const dong = $('hname').value ? `${$('bname').value} (행정동: ${$('hname').value})` : $('bname').value;
-    parts.push(`<div><b>동</b> ${dong || '-'}</div>`);
+    parts.push(`<div><b>원주시 행정동</b> ${dong || '-'}</div>`);
   }
   if (ageInfo && !ageInfo.error) {
     parts.push(`<div><b>생년월일</b> ${fmtDate(ageInfo.birth)}</div>`);
