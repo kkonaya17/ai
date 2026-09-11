@@ -7,6 +7,7 @@
 <!--
   ▶ 도로명주소 + 생년월일 통합 조회
   - 도로명주소를 검색하면 우편번호·시군구·법정동/행정동이 자동으로 채워집니다. (다음 우편번호 서비스, 무료/키 불필요)
+  - 태장동·명륜동은 행정동이 1동/2동으로 나뉘므로, '동' 결과에 법정동이 아닌 행정동(태장1동/2동, 명륜1동/2동)을 우선 표시합니다.
   - 생년월일 6자리(예: 990101)를 넣으면 만 나이가 자동 계산됩니다. (2023년 시행 "만 나이" 기준)
   - 파일 하나로 동작합니다. 서버·로그인 없음. 인터넷 연결은 주소 검색(다음 우편번호 팝업)에만 필요합니다.
 -->
@@ -59,10 +60,10 @@
       <div><label>우편번호</label><input id="zonecode" readonly></div>
       <div><label>지번주소</label><input id="jibunAddr" readonly></div>
       <div><label>시 / 군 / 구</label><input id="sigungu" readonly></div>
+      <div><label>행정동 (동 주민센터 관할)</label><input id="hname" readonly></div>
       <div><label>법정동</label><input id="bname" readonly></div>
-      <div><label>행정동</label><input id="hname" readonly></div>
     </div>
-    <p class="hint">'행정동'이 비어 있으면 법정동과 동일하거나, 검색 서비스가 별도 행정동 정보를 제공하지 않는 주소입니다.</p>
+    <p class="hint">'행정동'이 비어 있으면 법정동과 동일한 지역입니다. 단 <b>태장동·명륜동</b>은 행정동이 <b>태장1동/태장2동</b>, <b>명륜1동/명륜2동</b>으로 나뉘므로 반드시 행정동 칸(1동/2동)을 확인하세요 — 비어 있으면 아래 결과 요약에 경고가 표시됩니다.</p>
   </div>
 
   <div class="card">
@@ -151,6 +152,27 @@ function fmtDate(d){
 $('birth6').addEventListener('input', updateSummary);
 $('century').addEventListener('change', updateSummary);
 
+// 법정동은 하나지만 행정동이 1동/2동으로 나뉘는 지역 — 반드시 행정동(hname)을 우선 표시한다.
+const SPLIT_DONGS = ['태장동', '명륜동'];
+
+function dongInfo(){
+  const bname = $('bname').value;
+  const hname = $('hname').value;
+  const needsSplit = SPLIT_DONGS.includes(bname);
+  if (hname) {
+    return { main: hname, sub: (bname && bname !== hname) ? `법정동: ${bname}` : '', warn: '' };
+  }
+  if (needsSplit) {
+    const prefix = bname.replace('동', '');
+    return {
+      main: bname,
+      sub: '',
+      warn: `⚠ ${bname}은(는) ${prefix}1동 / ${prefix}2동으로 나뉩니다. 행정동 정보를 받아오지 못해 정확한 동을 표시할 수 없으니, 지번이나 관할 주민센터로 다시 확인하세요.`
+    };
+  }
+  return { main: bname, sub: '', warn: '' };
+}
+
 // ---------- ③ 요약 ----------
 function updateSummary(){
   const errBox = $('birthErr');
@@ -166,8 +188,12 @@ function updateSummary(){
   const parts = [];
   if (hasAddr) {
     parts.push(`<div><b>주소</b> ${$('roadAddr').value} (${$('zonecode').value})</div>`);
-    const dong = $('hname').value ? `${$('bname').value} (행정동: ${$('hname').value})` : $('bname').value;
-    parts.push(`<div><b>동</b> ${dong || '-'}</div>`);
+    const d = dongInfo();
+    let dongLine = `<div><b>동</b> ${d.main || '-'}`;
+    if (d.sub) dongLine += ` <span style="color:var(--mute);font-size:12px">(${d.sub})</span>`;
+    dongLine += `</div>`;
+    parts.push(dongLine);
+    if (d.warn) parts.push(`<div style="color:#c0392b;font-size:12px">${d.warn}</div>`);
   }
   if (ageInfo && !ageInfo.error) {
     parts.push(`<div><b>생년월일</b> ${fmtDate(ageInfo.birth)}</div>`);
@@ -186,8 +212,11 @@ $('copySummary').onclick = () => {
     lines.push(`도로명주소: ${$('roadAddr').value}`);
     lines.push(`지번주소: ${$('jibunAddr').value}`);
     lines.push(`시군구: ${$('sigungu').value}`);
-    lines.push(`법정동: ${$('bname').value}`);
+    const d = dongInfo();
+    lines.push(`동: ${d.main || '-'}`);
+    if ($('bname').value) lines.push(`법정동: ${$('bname').value}`);
     if ($('hname').value) lines.push(`행정동: ${$('hname').value}`);
+    if (d.warn) lines.push(d.warn);
   }
   const raw = $('birth6').value.trim();
   if (raw) {
