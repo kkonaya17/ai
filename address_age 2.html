@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>주소·나이 조회</title>
+<!--
+  ▶ 도로명주소 + 생년월일 통합 조회
+  - 도로명주소를 검색하면 우편번호·시군구·법정동/행정동이 자동으로 채워집니다. (다음 우편번호 서비스, 무료/키 불필요)
+  - 태장동·명륜동은 행정동이 1동/2동으로 나뉘므로, '동' 결과에 법정동이 아닌 행정동(태장1동/2동, 명륜1동/2동)을 우선 표시합니다.
+  - 생년월일 6자리(예: 990101)를 넣으면 만 나이가 자동 계산됩니다. (2023년 시행 "만 나이" 기준)
+  - 파일 하나로 동작합니다. 서버·로그인 없음. 인터넷 연결은 주소 검색(다음 우편번호 팝업)에만 필요합니다.
+-->
+<style>
+  :root{
+    --navy:#1F3A5F;
+    --accent:#2B6CB0;
+    --bg:#F6F8FB; --line:#D9E0E8; --soft:#EEF2F7; --ink:#1D2430; --mute:#5F6B7A;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Malgun Gothic","맑은 고딕",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5}
+  header{background:var(--navy);color:#fff;padding:16px 20px}
+  header h1{margin:0;font-size:20px}header p{margin:4px 0 0;font-size:13px;opacity:.85}
+  main{max-width:760px;margin:0 auto;padding:16px 20px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--navy)}
+  label{display:block;font-size:12px;color:var(--mute);margin:10px 0 4px}
+  label:first-of-type{margin-top:0}
+  input,select{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit}
+  input[readonly]{background:var(--soft);color:var(--ink)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  button{padding:9px 14px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .hint{font-size:12px;color:var(--mute);margin-top:8px}
+  .err{font-size:12px;color:#c0392b;margin-top:6px;min-height:16px}
+  .summary{background:var(--soft);border:1px dashed var(--accent);border-radius:10px;padding:14px;font-size:14px}
+  .summary b{color:var(--navy)}
+  .summary .big{font-size:22px;color:var(--navy);font-weight:bold}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:10px 16px;border-radius:999px;font-size:13px;opacity:0;transition:.3s;pointer-events:none}
+  .toast.on{opacity:1}
+  @media(max-width:520px){.row2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>주소 · 나이 통합 조회</h1>
+  <p>도로명주소로 우편번호·동을 찾고, 생년월일 6자리로 만 나이를 계산합니다.</p>
+</header>
+<main>
+  <div class="card">
+    <h2>① 도로명주소 검색</h2>
+    <label>도로명주소</label>
+    <input id="roadAddr" readonly placeholder="아래 버튼을 눌러 주소를 검색하세요">
+    <div class="bar">
+      <button class="primary" id="searchAddr">주소 검색</button>
+      <button id="clearAddr">지우기</button>
+    </div>
+    <div class="row2" style="margin-top:12px">
+      <div><label>우편번호</label><input id="zonecode" readonly></div>
+      <div><label>지번주소</label><input id="jibunAddr" readonly></div>
+      <div><label>시 / 군 / 구</label><input id="sigungu" readonly></div>
+      <div><label>행정동 (동 주민센터 관할)</label><input id="hname" readonly></div>
+      <div><label>법정동</label><input id="bname" readonly></div>
+    </div>
+    <p class="hint">'행정동'이 비어 있으면 법정동과 동일한 지역입니다. 단 <b>태장동·명륜동</b>은 행정동이 <b>태장1동/태장2동</b>, <b>명륜1동/명륜2동</b>으로 나뉘므로 반드시 행정동 칸(1동/2동)을 확인하세요 — 비어 있으면 아래 결과 요약에 경고가 표시됩니다.</p>
+  </div>
+
+  <div class="card">
+    <h2>② 생년월일 6자리 → 만 나이</h2>
+    <label>생년월일 6자리 (YYMMDD, 예: 990101)</label>
+    <input id="birth6" maxlength="6" inputmode="numeric" placeholder="예: 990101">
+    <label>출생연도 세기</label>
+    <select id="century">
+      <option value="auto">자동판단 (최근 100년 기준 추정)</option>
+      <option value="1900">1900년대</option>
+      <option value="2000">2000년대</option>
+    </select>
+    <div class="err" id="birthErr"></div>
+  </div>
+
+  <div class="card">
+    <h2>③ 결과 요약</h2>
+    <div class="summary" id="summary">
+      주소를 검색하고 생년월일을 입력하면 여기에 결과가 표시됩니다.
+    </div>
+    <div class="bar">
+      <button id="copySummary">결과 복사</button>
+    </div>
+  </div>
+</main>
+<div class="toast" id="toast">복사되었습니다</div>
+
+<script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+
+function toast(m){
+  const t = $('toast'); t.textContent = m; t.classList.add('on');
+  setTimeout(() => t.classList.remove('on'), 1400);
+}
+
+// ---------- ① 주소 검색 (다음 우편번호 서비스) ----------
+$('searchAddr').onclick = () => {
+  if (typeof daum === 'undefined' || !daum.Postcode) {
+    alert('주소 검색 서비스를 불러오지 못했습니다. 인터넷 연결을 확인해주세요.');
+    return;
+  }
+  new daum.Postcode({
+    oncomplete(data){
+      $('roadAddr').value = data.roadAddress || data.autoRoadAddress || '';
+      $('jibunAddr').value = data.jibunAddress || data.autoJibunAddress || '';
+      $('zonecode').value = data.zonecode || '';
+      $('sigungu').value = [data.sido, data.sigungu].filter(Boolean).join(' ');
+      $('bname').value = data.bname2 || data.bname || '';
+      $('hname').value = data.hname || '';
+      updateSummary();
+    }
+  }).open();
+};
+$('clearAddr').onclick = () => {
+  ['roadAddr','jibunAddr','zonecode','sigungu','bname','hname'].forEach(id => $(id).value = '');
+  updateSummary();
+};
+
+// ---------- ② 생년월일 6자리 → 만 나이 ----------
+function calcAge(str, centuryMode){
+  if (!/^\d{6}$/.test(str)) return { error: '생년월일 6자리 숫자를 입력하세요 (예: 990101)' };
+  const yy = +str.slice(0,2), mm = +str.slice(2,4), dd = +str.slice(4,6);
+  const nowYY = new Date().getFullYear() % 100;
+  let year;
+  if (centuryMode === '1900') year = 1900 + yy;
+  else if (centuryMode === '2000') year = 2000 + yy;
+  else year = (yy > nowYY) ? 1900 + yy : 2000 + yy;
+
+  const birth = new Date(year, mm - 1, dd);
+  if (birth.getFullYear() !== year || birth.getMonth() !== mm - 1 || birth.getDate() !== dd) {
+    return { error: '월/일이 올바르지 않습니다.' };
+  }
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const hadBirthday = (today.getMonth() > birth.getMonth()) ||
+    (today.getMonth() === birth.getMonth() && today.getDate() >= birth.getDate());
+  if (!hadBirthday) age--;
+  return { year, birth, age };
+}
+
+function fmtDate(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+$('birth6').addEventListener('input', updateSummary);
+$('century').addEventListener('change', updateSummary);
+
+// 법정동은 하나지만 행정동이 1동/2동으로 나뉘는 지역 — 반드시 행정동(hname)을 우선 표시한다.
+const SPLIT_DONGS = ['태장동', '명륜동'];
+
+function dongInfo(){
+  const bname = $('bname').value;
+  const hname = $('hname').value;
+  const needsSplit = SPLIT_DONGS.includes(bname);
+  if (hname) {
+    return { main: hname, sub: (bname && bname !== hname) ? `법정동: ${bname}` : '', warn: '' };
+  }
+  if (needsSplit) {
+    const prefix = bname.replace('동', '');
+    return {
+      main: bname,
+      sub: '',
+      warn: `⚠ ${bname}은(는) ${prefix}1동 / ${prefix}2동으로 나뉩니다. 행정동 정보를 받아오지 못해 정확한 동을 표시할 수 없으니, 지번이나 관할 주민센터로 다시 확인하세요.`
+    };
+  }
+  return { main: bname, sub: '', warn: '' };
+}
+
+// ---------- ③ 요약 ----------
+function updateSummary(){
+  const errBox = $('birthErr');
+  errBox.textContent = '';
+  const raw = $('birth6').value.trim();
+  let ageInfo = null;
+  if (raw) {
+    ageInfo = calcAge(raw, $('century').value);
+    if (ageInfo.error) errBox.textContent = ageInfo.error;
+  }
+
+  const hasAddr = !!$('roadAddr').value;
+  const parts = [];
+  if (hasAddr) {
+    parts.push(`<div><b>주소</b> ${$('roadAddr').value} (${$('zonecode').value})</div>`);
+    const d = dongInfo();
+    let dongLine = `<div><b>동</b> ${d.main || '-'}`;
+    if (d.sub) dongLine += ` <span style="color:var(--mute);font-size:12px">(${d.sub})</span>`;
+    dongLine += `</div>`;
+    parts.push(dongLine);
+    if (d.warn) parts.push(`<div style="color:#c0392b;font-size:12px">${d.warn}</div>`);
+  }
+  if (ageInfo && !ageInfo.error) {
+    parts.push(`<div><b>생년월일</b> ${fmtDate(ageInfo.birth)}</div>`);
+    parts.push(`<div class="big">만 ${ageInfo.age}세</div>`);
+  }
+
+  $('summary').innerHTML = parts.length
+    ? parts.join('')
+    : '주소를 검색하고 생년월일을 입력하면 여기에 결과가 표시됩니다.';
+}
+
+$('copySummary').onclick = () => {
+  const lines = [];
+  if ($('roadAddr').value) {
+    lines.push(`우편번호: ${$('zonecode').value}`);
+    lines.push(`도로명주소: ${$('roadAddr').value}`);
+    lines.push(`지번주소: ${$('jibunAddr').value}`);
+    lines.push(`시군구: ${$('sigungu').value}`);
+    const d = dongInfo();
+    lines.push(`동: ${d.main || '-'}`);
+    if ($('bname').value) lines.push(`법정동: ${$('bname').value}`);
+    if ($('hname').value) lines.push(`행정동: ${$('hname').value}`);
+    if (d.warn) lines.push(d.warn);
+  }
+  const raw = $('birth6').value.trim();
+  if (raw) {
+    const info = calcAge(raw, $('century').value);
+    if (!info.error) {
+      lines.push(`생년월일: ${fmtDate(info.birth)}`);
+      lines.push(`만 나이: ${info.age}세`);
+    }
+  }
+  if (!lines.length) { toast('복사할 내용이 없습니다'); return; }
+  navigator.clipboard.writeText(lines.join('\n')).then(() => toast('결과가 복사되었습니다'));
+};
+</script>
+</body>
+</html>
